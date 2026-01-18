@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "light_block_survival",
+	"version": "${version}",
+	"name": "light_block_survival",
+	"description": "A mod that adds light blocks to enhance survival gameplay by providing portable light sources.",
+	"authors": [
+		"Aurelith_Mxpea"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/light_block_survival/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.light_block_survival.Light_block_survival"
+		],
+		"client": [
+			"com.light_block_survival.Light_block_survivalClient"
+		]
+	},
+	"mixins": [
+		"light_block_survival.mixins.json",
+		{
+			"config": "light_block_survival.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.18.4",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

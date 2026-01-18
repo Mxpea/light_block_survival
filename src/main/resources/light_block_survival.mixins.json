@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "com.light_block_survival.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+      "LightBlockMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
