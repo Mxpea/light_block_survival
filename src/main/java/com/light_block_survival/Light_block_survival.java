@@ -22,7 +22,7 @@ public class Light_block_survival implements ModInitializer {
 	@Override
 	public void onInitialize() {
 
-		LOGGER.info("Hello Fabric world!");
+		LOGGER.info("神说，要有光");
 
 		// When a player attacks a block, allow survival players to instantly break vanilla LIGHT blocks.
 		AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) -> {
