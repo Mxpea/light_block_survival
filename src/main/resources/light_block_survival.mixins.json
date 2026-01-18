@@ -3,7 +3,8 @@
 	"package": "com.light_block_survival.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-      "LightBlockMixin"
+      "LightBlockMixin",
+      "BlockPlayerDestroyMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

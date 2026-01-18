@@ -1,15 +1,15 @@
 {
 	"schemaVersion": 1,
 	"id": "light_block_survival",
-	"version": "${version}",
+	"version": "1.1.2",
 	"name": "light_block_survival",
 	"description": "A mod that adds light blocks to enhance survival gameplay by providing portable light sources.",
 	"authors": [
 		"Aurelith_Mxpea"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/Mxpea/light_block_survival",
+		"sources": "https://github.com/Mxpea/light_block_survival"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/light_block_survival/icon.png",

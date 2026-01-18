@@ -38,12 +38,17 @@ public class Light_block_survival implements ModInitializer {
 				if (!state.is(Blocks.LIGHT)) return InteractionResult.PASS;
 				if (player.isCreative()) return InteractionResult.PASS;
 
+				// Extract light level: prefer BlockEntity (if present), then BlockState
+				int foundLevel = extractLightLevelFromBlockEntity(world, pos);
+				if (foundLevel < 0) {
+					foundLevel = extractLightLevelFromState(state, world, pos);
+				}
+
 				// Remove the block server-side without vanilla drops (we'll spawn a proper drop)
 				boolean removed = world.removeBlock(pos, false);
 				if (!removed) return InteractionResult.PASS;
 
 				// Build the appropriate drop ItemStack, preserving light level if possible
-				int foundLevel = extractLightLevelFromState(state);
 				ItemStack drop = buildDropForLight(state, world, pos);
 				if (foundLevel >= 0 && drop != null && !drop.isEmpty()) {
 					attachBlockStateLevelTag(drop, foundLevel);
@@ -134,7 +139,70 @@ public class Light_block_survival implements ModInitializer {
 		return 0;
 	}
 
-	private static int extractLightLevelFromState(BlockState state) {
+	private static int extractLightLevelFromState(BlockState state, Level world, BlockPos pos) {
+		if (state == null) return -1;
+		// Prefer reading explicit IntegerProperty named like level/light if present using BlockState.getValue(Property)
+		java.lang.reflect.Method getValueMethod = null;
+		for (java.lang.reflect.Method m : state.getClass().getMethods()) {
+			if (!m.getName().equals("getValue")) continue;
+			if (m.getParameterCount() == 1) { getValueMethod = m; break; }
+		}
+
+		try {
+			Object block = state.getBlock();
+			java.lang.reflect.Method getStateDef = block.getClass().getMethod("getStateDefinition");
+			Object stateDef = getStateDef.invoke(block);
+			java.lang.reflect.Method getProperties = stateDef.getClass().getMethod("getProperties");
+			Object propsObj = getProperties.invoke(stateDef);
+			if (propsObj instanceof java.util.Collection) {
+				java.util.List<java.util.Map.Entry<Object,Integer>> numericCandidates = new java.util.ArrayList<>();
+				for (Object prop : (java.util.Collection<?>) propsObj) {
+					if (prop == null) continue;
+					// attempt to get property name
+					String propName = null;
+					String[] nameMethods = new String[] {"getName","getSerializedName","getPropertyName","name","getId"};
+					for (String nm : nameMethods) {
+						try { java.lang.reflect.Method gm = prop.getClass().getMethod(nm); Object res = gm.invoke(prop); if (res != null) { propName = res.toString(); break; } } catch (Throwable ignored) {}
+					}
+					if (propName == null) propName = prop.toString();
+					String pn = propName.toLowerCase();
+
+					// if property name looks like level/light, prefer direct getValue
+					if (getValueMethod != null && (pn.contains("level") || pn.contains("light") || pn.contains("luminance") || pn.contains("power"))) {
+						try {
+							Object val = getValueMethod.invoke(state, prop);
+							Integer uv = unwrapIntResult(val);
+							if (uv != null) return uv;
+							if (val instanceof Number) {
+								int v = ((Number) val).intValue(); if (v >= 0 && v <= 15) return v;
+							}
+							try { int v = Integer.parseInt(String.valueOf(val)); if (v >= 0 && v <= 15) return v; } catch (Throwable ignored) {}
+						} catch (Throwable ignored) {}
+					}
+
+					// fallback: try any method on state that accepts this prop
+					Object val = null;
+					for (java.lang.reflect.Method m : state.getClass().getMethods()) {
+						if (m.getParameterCount() != 1) continue;
+						Class<?> pType = m.getParameterTypes()[0];
+						if (!pType.isAssignableFrom(prop.getClass())) continue;
+						try { val = m.invoke(state, prop); } catch (Throwable ignored) { continue; }
+						if (val != null) break;
+					}
+
+					if (val instanceof Number) {
+						int v = ((Number) val).intValue();
+						if (v >= 0 && v <= 15) numericCandidates.add(new java.util.AbstractMap.SimpleEntry<>(prop, v));
+					} else if (val != null) {
+						try { int v = Integer.parseInt(val.toString()); if (v >= 0 && v <= 15) numericCandidates.add(new java.util.AbstractMap.SimpleEntry<>(prop, v)); } catch (Throwable ignored) {}
+					}
+				}
+
+				if (numericCandidates.size() == 1) return numericCandidates.get(0).getValue();
+			}
+		} catch (Throwable ignored) {}
+
+		// fallback to string parsing for compatibility
 		try {
 			String s = state.toString().toLowerCase();
 			String[] keys = new String[]{"level=","light=","luminance=","power=","light_level="};
@@ -200,5 +268,78 @@ public class Light_block_survival implements ModInitializer {
 				|| (primitive == double.class && wrapper == Double.class)
 				|| (primitive == char.class && wrapper == Character.class);
 		}
+	}
+
+	private static int extractLightLevelFromBlockEntity(Level world, BlockPos pos) {
+		try {
+			java.lang.reflect.Method getBe = world.getClass().getMethod("getBlockEntity", BlockPos.class);
+			Object be = getBe.invoke(world, pos);
+			if (be == null) return -1;
+
+			// Try to obtain NBT via common save methods
+			Object nbt = null;
+			try {
+				java.lang.reflect.Method saveMethod = be.getClass().getMethod("save", CompoundTag.class);
+				Object tmp = Class.forName("net.minecraft.nbt.CompoundTag").getDeclaredConstructor().newInstance();
+				Object res = saveMethod.invoke(be, tmp);
+				if (res == null) nbt = tmp; else nbt = res;
+			} catch (Throwable ignored) {
+				try {
+					java.lang.reflect.Method saveNoArg = be.getClass().getMethod("save");
+					Object res = saveNoArg.invoke(be);
+					if (res != null) nbt = res;
+				} catch (Throwable ignored2) {}
+			}
+
+			if (nbt == null) return -1;
+
+			// Try to read an int via reflection (handle mappings that return Optional<Integer> or int)
+			try {
+				java.lang.reflect.Method getInt = nbt.getClass().getMethod("getInt", String.class);
+				Object res = getInt.invoke(nbt, "level");
+				Integer v = unwrapIntResult(res);
+				if (v != null) return v;
+			} catch (Throwable ignored) {}
+
+			// fallback: check BlockStateTag compound
+			try {
+				java.lang.reflect.Method contains = nbt.getClass().getMethod("contains", String.class);
+				Object has = contains.invoke(nbt, "BlockStateTag");
+				boolean hasTag = false;
+				if (has instanceof Boolean) hasTag = (Boolean) has; else if (has != null) hasTag = Boolean.parseBoolean(has.toString());
+				if (hasTag) {
+					java.lang.reflect.Method get = nbt.getClass().getMethod("get", String.class);
+					Object bst = get.invoke(nbt, "BlockStateTag");
+					if (bst != null) {
+						try {
+							java.lang.reflect.Method getInt2 = bst.getClass().getMethod("getInt", String.class);
+							Object res2 = getInt2.invoke(bst, "level");
+							Integer v2 = unwrapIntResult(res2);
+							if (v2 != null) return v2;
+						} catch (Throwable ignored) {}
+					}
+				}
+			} catch (Throwable ignored) {}
+		} catch (Throwable ignored) {}
+		return -1;
+	}
+
+	@org.jetbrains.annotations.Nullable
+	private static Integer unwrapIntResult(Object res) {
+		try {
+			if (res == null) return null;
+			if (res instanceof Number) return ((Number) res).intValue();
+			// handle Optional<Integer> or OptionalInt
+			if (res instanceof java.util.Optional) {
+				java.util.Optional<?> opt = (java.util.Optional<?>) res;
+				if (!opt.isPresent()) return null;
+				Object v = opt.get();
+				if (v instanceof Number) return ((Number) v).intValue();
+				try { return Integer.parseInt(v.toString()); } catch (Throwable ignored) { return null; }
+			}
+			// fallback parse
+			try { return Integer.parseInt(res.toString()); } catch (Throwable ignored) { return null; }
+		} catch (Throwable ignored) {}
+		return null;
 	}
 }
